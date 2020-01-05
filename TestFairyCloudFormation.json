@@ -1,0 +1,132 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Description": "AWS CloudFormation for installing the TestFairy mobile development platform",
+
+	"Parameters": {
+
+		"BucketName": {
+			"Description": "Name of S3 bucket where to store IPA/APK files and session recordings",
+			"Type": "String",
+			"ConstraintDescription": "must be a valid name for an S3 bucket"
+		},
+
+		"InstanceType" : {
+			"Description" : "EC2 instance type",
+			"Type" : "String",
+			"Default" : "m5.large",
+			"AllowedValues" : [ "t3.medium", "m5.large", "m5.xlarge", "m5.2xlarge" ],
+			"ConstraintDescription" : "must be a valid EC2 instance type."
+		},
+
+		"SSHLocation": {
+			"Description": "The IP address range that can be used to SSH to the EC2 instance",
+			"Type": "String",
+			"MinLength": "9",
+			"MaxLength": "18",
+			"Default": "0.0.0.0/0",
+			"AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+			"ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+		},
+
+		"KeyName": {
+			"Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+			"Type": "AWS::EC2::KeyPair::KeyName",
+			"ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+	        }
+	},
+
+	"Mappings": {
+		"AWSRegionArch2AMI": {
+			"us-east-1": { "Image": "ami-00eb20669e0990cb4" },
+			"us-west-1": { "Image": "ami-0bce08e823ed38bdd" }
+	  	}
+	},
+
+	"Resources": {
+		"S3Bucket": {
+			"Type": "AWS::S3::Bucket",
+			"Properties": {
+				"BucketName": { "Ref" : "BucketName" },
+				"CorsConfiguration": {
+					"CorsRules": [
+						{
+							"AllowedOrigins": ["*"],
+							"AllowedHeaders": ["*"],
+							"AllowedMethods": ["GET", "POST"]
+						}
+					]
+				}
+			}
+		},
+
+		"InstanceSecurityGroup" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"Properties" : {
+				"GroupDescription" : "Enable HTTPS from all + ssh access",
+				"SecurityGroupIngress" : [
+					{"IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "0.0.0.0/0"},
+					{"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocation"}}
+				]
+			}
+		},
+
+		"EC2Instance": {
+			"Type" : "AWS::EC2::Instance",
+			"Properties" : {
+				"InstanceType" : { "Ref" : "InstanceType" },
+				"SecurityGroups" : [ { "Ref" : "InstanceSecurityGroup" } ],
+				"KeyName" : { "Ref" : "KeyName" },
+				"EbsOptimized": true,
+				"Monitoring": true,
+				"BlockDeviceMappings": [
+					{
+						"DeviceName": "/dev/xvda",
+						"Ebs": {
+							"VolumeType": "gp2",
+							"DeleteOnTermination": "false",
+							"VolumeSize": "128"
+						}
+					}
+				],
+				"ImageId" : {
+					"Fn::FindInMap": [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" }, "Image" ]
+				},
+				"UserData": {
+					"Fn::Base64": {
+						"Fn::Join": [
+							"", [
+								"#!/bin/bash -xe\n",
+								"yum update -y\n",
+								"yum install -y git\n"
+							]
+						]
+					}
+				}
+			}
+		},
+
+		"IPAddress" : {
+			"Type" : "AWS::EC2::EIP"
+		},
+
+		"IPAssoc" : {
+			"Type" : "AWS::EC2::EIPAssociation",
+			"Properties" : {
+				"InstanceId" : { "Ref" : "EC2Instance" },
+				"EIP" : { "Ref" : "IPAddress" }
+			}
+		}
+	},
+
+	"Outputs" : {
+		"InstanceId": {
+			"Description": "InstanceId of the newly created EC2 instance",
+			"Value": { "Ref" : "EC2Instance" }
+		},
+
+		"InstanceIPAddress": {
+			"Description" : "IP address of the newly created EC2 instance",
+			"Value": { "Ref" : "IPAddress" }
+		}
+	}
+}
