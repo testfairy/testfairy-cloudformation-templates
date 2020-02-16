@@ -42,6 +42,9 @@
 			"us-west-1": {
 				"Image": "ami-0bce08e823ed38bdd"
 			},
+			"eu-central-1": {
+				"Image": "ami-0ba441bdd9e494102"
+			},
 			"sa-east-1": {
 				"Image": "ami-04b202bf877b5027b"
 			}
